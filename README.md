@@ -4,6 +4,9 @@
 
 This plugin heavely inspired by Emacs's Compiler Mode. If you know the Rusian Twitch streamer / Youtube, he use that in every single his Programming Session.
 
+## Requirement 
+
+You need [Luar](https://github.com/gustavo-hms/luar) because this plugin need it.
 ## Instalation
 
 Just copy compiler-mode.kak to your autoload directory and paste this command to your kakrc file:
