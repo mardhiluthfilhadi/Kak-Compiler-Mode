@@ -1,5 +1,7 @@
 # COMPILER MODE for KAKOUNE
 
+![Demo GIF](demo.gif)
+
 This plugin heavely inspired by Emacs's Compiler Mode. If you know the Rusian Twitch streamer / Youtube, he use that in every single his Programming Session.
 
 ## Instalation
