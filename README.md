@@ -12,7 +12,7 @@ You need [Luar](https://github.com/gustavo-hms/luar) because this plugin need it
 Just copy compiler-mode.kak to your autoload directory and paste this command to your kakrc file:
 
 ```text
-require-module compcmd
+require-module compilation
 ```
 tha's it.
 
