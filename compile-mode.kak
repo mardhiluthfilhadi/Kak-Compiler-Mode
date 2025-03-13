@@ -1,131 +1,109 @@
-# Initialization
-hook global WinSetOption filetype=compiler %{
-    require-module compiler
-}
 
-hook -group compiler-highlight global WinSetOption filetype=compiler %{
-    add-highlighter window/compiler ref compiler
-    hook -once -always window WinSetOption filetype=.* %{ remove-highlighter window/compiler }
+provide-module compilation %{
 
-    map window normal <ret> ':parse-err-msg <ret>'
-    map window user q ':db <ret>'
+declare-option str last_command        ""
+declare-option str compilation_env     ""
+declare-option int compilation_env_set 0
 
-}
+define-command -params .. -file-completion \
+    -docstring %{
+        compile <shell command>: run shell command and see result in compilation mode.
+    } compile %{
+     write-all
 
-require-module luar
-provide-module compiler %§
+     set-option global last_command "%arg{@}"
+     evaluate-commands %sh{
+     output=$(mktemp -d "${TMPDIR:-/tmp}"/kak-compilation.XXXXXXXX)/fifo
+     mkfifo ${output}
+     ( { trap - INT QUIT; eval "echo \"*compilation begin*  at: $(date)\""
 
-# Syntax highlighting
-add-highlighter shared/compiler regions
-add-highlighter shared/compiler/code default-region group
-add-highlighter shared/compiler/code/ regex "[a-zA-Z0-9_\-\./]+\.[a-zA-Z0-9]+(:|\()[0-9]+" 0:value
+     if [ "${kak_opt_compilation_env_set}" -ne 0 ]; then
+        echo "ENV: ${kak_opt_compilation_env}"
+        eval "${kak_opt_compilation_env}"
+     fi;
 
-# Keywords
-add-highlighter shared/compiler/code/ regex \b(error|Error|ERROR|warning|Warning|WARNING|note|Note|NOTE)\b 0:keyword
-add-highlighter shared/compiler/code/ regex "\*Compilation\*" 0:function
+     echo "CMD: $@\n"
+     eval "$@"
+     
+     exit_code=$?
+     if [ $exit_code -ne 0 ]; then
+        echo "\n*compilation failed* with return code: $exit_code"
+     else
+        echo "\n*compilation end*    at: $(date)"
+     fi; } > ${output} 2>&1 & ) > /dev/null 2>&1 < /dev/null
 
-define-command -hidden open-file-mode -params 1 %{
-        lua %arg{1} %val{reg_m} %{
-                local patterns = {
-                        grep = {"([a-zA-Z0-9_\\-/\\.]+\\.[a-zA-Z0-9]+):(\\d+)", false},
-                        lua  = {"([a-zA-Z0-9_\\-/\\.]+\\.[a-zA-Z0-9]+):(\\d+)", false},
-                        ssa  = {"([a-zA-Z0-9_\\-/\\.]+\\.[a-zA-Z0-9]+):(\\d+)", false},
-                        c       = {"([a-zA-Z0-9_\\-/\\.]+\\.[a-zA-Z0-9]+):(\\d+):(\\d+)", true},
-                        default = {"([a-zA-Z0-9_\\-/\\.]+\\.[a-zA-Z0-9]+):(\\d+):(\\d+)", true},
-                }
-                local mode = patterns[arg[1]] or patterns.default
-                if arg[2] == "grep" then mode = patterns.grep end
-
-                local pattern,need_char = mode[1], mode[2]
-
-                kak.execute_keys("k gl")
-                kak.execute_keys("/"..pattern.."<ret>")
-
-                local line,char = "%val{reg_2}","1"
-                if need_char then
-                        char = "%val{reg_3}"
-                end
-                kak.evaluate_commands("edit!", "%val{reg_1}", line, char)
-        }
-}
-# src/tools/string.c:29:20
-define-command -hidden parse-err-msg %{
-    execute-keys k gl
-    execute-keys /[a-zA-Z0-9_\-/]+\.([a-zA-Z0-9]+)<ret>
-        lua %val{reg_1} %{
-                kak.evaluate_commands("open-file-mode", arg[1])
+     printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
+               edit! -fifo ${output} -scroll *compilation*
+               set-option buffer filetype compilation
+               hook -always -once buffer BufCloseFifo .* %{
+                    nop %sh{ rm -r $(dirname ${output}) }
+               }
+           }"
     }
 }
 
-§
+alias global c compile
+map global user c :c<space>
+map global user n :c<space>%opt{last_command}<ret>
+map global user s :set-compilation-env<space>
 
-provide-module compcmd %§
+define-command -params .. -file-completion set-compilation-env %{
+    set-option global compilation_env_set 1
+    set-option global compilation_env "%arg{@}"
+}
 
-#require-module luar
+define-command -hidden get-file-extension %{
+    try %{
+        execute-keys xs ([\w\d_\-/]+\.[\w\d]+):(\d+):(\d+) <ret>
+        edit %reg{1} %reg{2} %reg{3} 
+    } catch %{ try %{
+        execute-keys xs ([\w\d_\-/]+\.[\w\d]+):(\d+) <ret>
+        edit %reg{1} %reg{2}
+    } catch %{ try %{
+        execute-keys xs ([\w\d_\-/]+\.[\w\d]+)\((\d+),(\d+)\) <ret>
+        edit %reg{1} %reg{2} %reg{3} 
+    } catch %{ try %{
+        execute-keys xs ([\w\d_\-/]+\.[\w\d]+)\((\d+):(\d+)\) <ret>
+        edit %reg{1} %reg{2} %reg{3} 
+    } catch %{ try %{
+        execute-keys xs ([\w\d_\-/]+\.[\w\d]+) <ret>
+        edit %reg{1}
+    } catch %{
+        try %{
+            execute-keys gg / [\w\d_\-/]+\.[\w\d]+:<ret>
+            evaluate-commands get-file-extension
+        } catch %{ try %{
+            execute-keys gg / [\w\d_\-/]+\.[\w\d]+\(<ret>
+            evaluate-commands get-file-extension
+        } catch %{ delete-buffer! }}
+    }}}}}
+}
 
-define-command -params 1.. \
-        -docstring "compilation <cmd>: execute command and goto result output." \
-        compilation %{
-    try %{ evaluate-commands delete-buffer! *compilation* }
-    try %{ evaluate-commands write-all }
-    lua %arg{@} %{
-                local cmd  = ""
-                local comp = "kak_compilation_buffer"
-                for _,word in ipairs(arg) do cmd = cmd..word.." " end
-                kak.set_register("z", cmd)
+add-highlighter shared/compilation group
+add-highlighter shared/compilation/ regex "\*compilation begin\*"  0:default+b
+add-highlighter shared/compilation/ regex "\*compilation end\*"    0:default+b
+add-highlighter shared/compilation/ regex "\*compilation failed\*" 0:red+b
 
-                os.execute("mkfifo "..comp)
-                local head = "echo \"*Compilation* start ... $(date)\" && "
-                local foot = "echo \"    \" && echo \"*Compilation* end.\""
-                kak.evaluate_commands("write-to-fifo", head..cmd.." && "..foot)
-                if arg[1] == "grep" then kak.set_register("m", "grep")
-                else kak.set_register("m", "else") end
+add-highlighter shared/compilation/ regex "ERROR:" 0:red+b
+add-highlighter shared/compilation/ regex "Error:" 0:red+b
+add-highlighter shared/compilation/ regex "error:" 0:red+b
+
+add-highlighter shared/compilation/ regex "WARNIG:" 0:yellow+b
+add-highlighter shared/compilation/ regex "Warnig:" 0:yellow+b
+add-highlighter shared/compilation/ regex "warnig:" 0:yellow+b
+
+add-highlighter shared/compilation/ regex "NOTE" 0:default+b
+add-highlighter shared/compilation/ regex "Note" 0:default+b
+add-highlighter shared/compilation/ regex "note" 0:default+b
+
+add-highlighter shared/compilation/ regex "[\w\d_\-/]+\.[\w\d]+" 0:keyword
+
+hook -group compilation-highlight global WinSetOption filetype=compilation %{
+    add-highlighter window/compilation ref compilation
+    hook window NormalKey <ret> %{ get-file-extension }
+    hook -once -always window WinSetOption filetype=.* %{
+        remove-highlighter window/compilation
     }
 }
 
-define-command -hidden -params 1.. run-bash %{
-        evaluate-commands %sh~
-                ({ trap - INT QUIT; eval "$@" ;} > "kak_compilation_buffer" 2>&1 &) > /dev/null 2>&1 < /dev/null &&
-                sleep .5
-                printf "
-        nop nop
-        edit! -fifo kak_compilation_buffer -scroll *compiler*
-                set-option buffer filetype compiler"
-        ~
-        echo Compilation Finish.
 }
-
-define-command -hidden -params 1.. write-to-fifo %{
-        lua %arg{@} %{
-        local cmd  = ""
-                local comp = "kak_compilation_buffer"
-                for _,word in ipairs(arg) do cmd = cmd..word.." " end
-                kak.evaluate_commands("run-bash", cmd)
-        }
-}
-
-define-command last-compilation-cmd %{
-        lua %val{reg_z} %{
-        if arg[1] == "" then return end
-
-        local cmd = ""
-                for _,word in ipairs(arg) do cmd = cmd..word.." " end
-                kak.set_register("z", "")
-                kak.evaluate_commands("compilation", cmd)
-    }
-}
-
-alias global c compilation
-complete-command compilation file
-
-map global user n ':last-compilation-cmd <ret>'
-map global user q ':wq <ret>'
-map global user b ':bn <ret>'
-map global user c ':c '
-map global user e ':e '
-
-hook global KakEnd .* %{
-    try %sh{ rm kak_compilation_buffer }
-}
-
-§
