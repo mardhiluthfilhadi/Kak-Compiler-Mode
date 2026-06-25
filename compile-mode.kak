@@ -2,8 +2,6 @@
 provide-module compilation %{
 
 declare-option str last_command        ""
-declare-option str compilation_env     ""
-declare-option int compilation_env_set 0
 
 define-command -params .. -file-completion \
     -docstring %{
@@ -17,19 +15,18 @@ define-command -params .. -file-completion \
      mkfifo ${output}
      ( { trap - INT QUIT; eval "echo \"*compilation begin*  at: $(date)\""
 
-     if [ "${kak_opt_compilation_env_set}" -ne 0 ]; then
-        echo "ENV: ${kak_opt_compilation_env}"
-        eval "${kak_opt_compilation_env}"
-     fi;
+     echo "CMD: $@"
+     eval "$@ &"
 
-     echo "CMD: $@\n"
-     eval "$@"
-     
+     PID=$!
+     echo "$PID" > /tmp/kak-compilation-pid
+     wait $PID
+
      exit_code=$?
      if [ $exit_code -ne 0 ]; then
-        echo "\n*compilation failed* with return code: $exit_code"
+        echo "*compilation failed* with return code: $exit_code"
      else
-        echo "\n*compilation end*    at: $(date)"
+        echo "*compilation end*    at: $(date)"
      fi; } > ${output} 2>&1 & ) > /dev/null 2>&1 < /dev/null
 
      printf %s\\n "evaluate-commands -try-client '$kak_opt_toolsclient' %{
@@ -42,10 +39,12 @@ define-command -params .. -file-completion \
     }
 }
 
+define-command compilation-kill %{ nop %sh{ pkill -P $(cat /tmp/kak-compilation-pid) } }
+
 alias global c compile
 map global user c :c<space>
+map global user k :compilation-kill<ret>
 map global user n :c<space>%opt{last_command}<ret>
-map global user s :set-compilation-env<space>
 
 define-command -params .. -file-completion set-compilation-env %{
     set-option global compilation_env_set 1
