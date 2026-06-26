@@ -87,9 +87,9 @@ add-highlighter shared/compilation/ regex "ERROR:" 0:red+b
 add-highlighter shared/compilation/ regex "Error:" 0:red+b
 add-highlighter shared/compilation/ regex "error:" 0:red+b
 
-add-highlighter shared/compilation/ regex "WARNIG:" 0:yellow+b
-add-highlighter shared/compilation/ regex "Warnig:" 0:yellow+b
-add-highlighter shared/compilation/ regex "warnig:" 0:yellow+b
+add-highlighter shared/compilation/ regex "WARNING:" 0:yellow+b
+add-highlighter shared/compilation/ regex "Warning:" 0:yellow+b
+add-highlighter shared/compilation/ regex "warning:" 0:yellow+b
 
 add-highlighter shared/compilation/ regex "NOTE" 0:default+b
 add-highlighter shared/compilation/ regex "Note" 0:default+b
